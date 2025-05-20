@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Biogás Comunitario</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    canvas { max-width: 100%; margin-bottom: 20px; }
+    table, th, td { border: 1px solid black; border-collapse: collapse; padding: 5px; }
+    th { background-color: #eee; }
+    form { margin-top: 40px; padding: 20px; border: 1px solid #ccc; border-radius: 8px; background-color: #f9f9f9; }
+    form input, form select { margin-bottom: 10px; padding: 8px; width: 100%; box-sizing: border-box; }
+    form button { padding: 10px 20px; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Dashboard de Monitoreo - Proyecto Biogás Comunitario</h1>
+  <button onclick="exportToExcel()">Exportar a Excel</button>
+
+  <h2>Gráficas</h2>
+  <canvas id="phChart"></canvas>
+  <canvas id="tempChart"></canvas>
+  <canvas id="ecChart"></canvas>
+  <canvas id="sdtChart"></canvas>
+
+  <h2>Tabla de Datos</h2>
+  <table id="dataTable"></table>
+
+  <h2>Agregar Nuevos Datos</h2>
+  <form id="dataForm">
+    <label>Tipo:</label>
+    <select id="tipo">
+      <option value="Biodigestor">Biodigestor</option>
+      <option value="Biodigestato">Biodigestato</option>
+    </select>
+    <label>Fecha:</label>
+    <input type="date" id="fecha" required>
+    <label>pH:</label>
+    <input type="number" step="any" id="ph" required>
+    <label>Temperatura (°C):</label>
+    <input type="number" step="any" id="temperatura" required>
+    <label>Electroconductividad:</label>
+    <input type="number" step="any" id="ec" required>
+    <label>Sólidos Disueltos Totales:</label>
+    <input type="number" step="any" id="sdt" required>
+    <button type="submit">Guardar en Firebase</button>
+  </form>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAGbDBG_JwgZZHu1zPqD1cG456Ohnd0eTM",
+      authDomain: "biogas-comunitario-sostenible.firebaseapp.com",
+      databaseURL: "https://biogas-comunitario-sostenible-default-rtdb.firebaseio.com",
+      projectId: "biogas-comunitario-sostenible",
+      storageBucket: "biogas-comunitario-sostenible.appspot.com",
+      messagingSenderId: "886234020036",
+      appId: "1:886234020036:web:29875283ff2ae975c87191"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const dataSet = { biodigestor: [], biodigestato: [] };
+
+    function getData() {
+      dataSet.biodigestor = [];
+      dataSet.biodigestato = [];
+      db.ref('Biodigestor').once('value').then(snapshot => {
+        snapshot.forEach(child => {
+          const d = child.val();
+          dataSet.biodigestor.push({
+            fecha: d.FECHA,
+            ph: parseFloat(d.PH || d["PH LOW"]),
+            temperatura: parseFloat(d.TEMPERATURA),
+            ec: parseFloat(d.ELECTROCONDUCTIVIDAD),
+            sdt: parseFloat(d["SÓLIDOS DISUELTOS TOTALES"])
+          });
+        });
+        db.ref('Biodigestato').once('value').then(snapshot => {
+          snapshot.forEach(child => {
+            const d = child.val();
+            dataSet.biodigestato.push({
+              fecha: d.FECHA,
+              ph: parseFloat(d.PH || d["PH LOW"]),
+              temperatura: parseFloat(d.TEMPERATURA),
+              ec: parseFloat(d.ELECTROCONDUCTIVIDAD),
+              sdt: parseFloat(d["SÓLIDOS DISUELTOS TOTALES"])
+            });
+          });
+          renderCharts();
+          renderTables();
+        });
+      });
+    }
+
+    function renderCharts() {
+      const labels = dataSet.biodigestor.map(d => d.fecha);
+      const createChart = (ctxId, label, field) => {
+        new Chart(document.getElementById(ctxId), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: `${label} - Biodigestor`,
+                data: dataSet.biodigestor.map(d => d[field]),
+                borderWidth: 1,
+                fill: false
+              },
+              {
+                label: `${label} - Biodigestato`,
+                data: dataSet.biodigestato.map(d => d[field]),
+                borderWidth: 1,
+                fill: false
+              }
+            ]
+          }
+        });
+      };
+      createChart("phChart", "pH", "ph");
+      createChart("tempChart", "Temperatura", "temperatura");
+      createChart("ecChart", "Conductividad Eléctrica", "ec");
+      createChart("sdtChart", "Sólidos Disueltos Totales", "sdt");
+    }
+
+    function renderTables() {
+      const table = document.getElementById('dataTable');
+      table.innerHTML = '<tr><th>Fecha</th><th>Tipo</th><th>pH</th><th>Temperatura</th><th>EC</th><th>SDT</th></tr>';
+      ['biodigestor', 'biodigestato'].forEach(tipo => {
+        dataSet[tipo].forEach(d => {
+          table.innerHTML += `<tr><td>${d.fecha}</td><td>${tipo}</td><td>${d.ph}</td><td>${d.temperatura}</td><td>${d.ec}</td><td>${d.sdt}</td></tr>`;
+        });
+      });
+    }
+
+    function exportToExcel() {
+      let csv = "Fecha,Tipo,pH,Temperatura,EC,SDT\n";
+      ['biodigestor', 'biodigestato'].forEach(tipo => {
+        dataSet[tipo].forEach(d => {
+          csv += `${d.fecha},${tipo},${d.ph},${d.temperatura},${d.ec},${d.sdt}\n`;
+        });
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'datos_biogas.csv';
+      link.click();
+    }
+
+    document.getElementById("dataForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+      const tipo = document.getElementById("tipo").value;
+      const data = {
+        FECHA: document.getElementById("fecha").value,
+        PH: parseFloat(document.getElementById("ph").value),
+        TEMPERATURA: parseFloat(document.getElementById("temperatura").value),
+        ELECTROCONDUCTIVIDAD: parseFloat(document.getElementById("ec").value),
+        "SÓLIDOS DISUELTOS TOTALES": parseFloat(document.getElementById("sdt").value)
+      };
+      db.ref(tipo).push(data).then(() => {
+        alert("Datos guardados exitosamente en " + tipo);
+        getData();
+        document.getElementById("dataForm").reset();
+      });
+    });
+
+    getData();
+  </script>
+</body>
+</html>
